@@ -14,7 +14,7 @@ app.directive("modalDialog", () => {
         //only the modal directly affects whether it should be shown
         console.log("modal toggles itself to", args.show)
         $scope.show = args.show;
-        $scope.instructions = InstructionsFactory.get();
+        $scope.instructions = InstructionsFactory.getSequence().instructions;
       })
 
       $scope.hideModal = function() {

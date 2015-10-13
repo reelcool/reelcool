@@ -1,6 +1,8 @@
 // utilities
 var spawn = require('child_process').spawn;
 var Promise = require('bluebird');
+var mongoose = require('mongoose');
+mongoose.Promise = Promise;
 var fs = require('fs');
 Promise.promisifyAll(fs);
 var path = require('path');
@@ -8,7 +10,7 @@ var ffmpeg = require('fluent-ffmpeg');
 
 // express and models
 var router = require('express').Router();
-var Video = require('mongoose').model('Video');
+var Video = mongoose.model('Video');
 
 // file paths setup
 var filesPath = path.join(__dirname, "..", "..", "..", "files");
@@ -88,46 +90,89 @@ function makeFilterString(filtArr){
 }
 
 router.post('/makeit', function(req, res) {
-    let instructions = req.body;
+
+    let instructions = req.body.instructions;
+    let instructionsId = req.body.id;
     let vidsDone = 0;
     let mergedVideo = ffmpeg();
 
-    instructions.forEach(function(instruction, ind) {
-        let vid = instruction.videoSource.mongoId;
-        let sourceVid = uploadedFilesPath + '/' + vid + '.webm';
-        let destVid = stagingAreaPath + '/' + vid + '.mp4';
-        let startTime = instruction.startTime;
-        let duration = (Number(instruction.endTime) - Number(startTime)).toString();
-        // TODO: Need an option for "no filter" that doesn't break the child process
-        // (which expects a filter). If instruction.filter is left "undefined", the proc breaks.
-        // That's why we currently force it to have grayscale if it doesn't already have a filter.
-        let filterCode = makeFilterString(instruction.filters) || "mp=eq2=1:1:0:1:1:1:1";
-        let filtersProc = spawn('ffmpeg', ['-ss', startTime, '-i', sourceVid, '-t', duration, '-filter_complex', filterCode, '-strict', 'experimental', '-preset', 'ultrafast', '-vcodec', 'libx264', destVid, '-y']);
-        filtersProc.on('error',function(err,stdout,stderr){
-            console.error('Errored when attempting to convert this video. Details below.');
-            console.error(err);
-            console.error(stdout);
-            console.error(stderr);
-        });
-        filtersProc.on('exit', function(code, signal) {
-            console.log('Filtered and converted', vid);
-            vidsDone++;
-            if (vidsDone == instructions.length) {
-                console.log('Filters done, now merging.');
-                mergeVids(mergedVideo, createdFilePath, instructions);
-            }
-            req.resume();
-        });
+    //first search in the videos collections for whether the video already exists
+    //based on whether there is a video that has the same instructions ID
+    Video.findOne({instructionsId: instructionsId})
+    .then(video => {
+      //send back the file name
+      if(video && video.instructionsId){
+        //let videoPath = path.join(createdFilePath, video._id + ".mp4");
+        console.log("video already exists for this set of instructions!",instructionsId, video)
+        return res.status(201).send(video._id+".mp4");
+      }
+      else{
+        //create a new video for this set of instructions
+        console.log("video doesn't exist yet, make it!")
+        return makeClipsToBeMerged(instructions)
+        .then(inst => {
+          mergeVids(mergedVideo, createdFilePath, inst, instructionsId);
+        })
+      }
+    })
+    .catch(err=> {
+      console.log("error!!!", err);
     });
 
-    function mergeVids(mergedVideo, createdFilePath, instructions) {
-        let createdVidName = Date.now() + '.mp4';
-        let mergedVideoDest = path.join(createdFilePath,createdVidName); // name of file based on Date.now(). file is already located in the user's created folder so it we would be able to pull it up
+    function makeClipsToBeMerged(instructions){
 
+      return new Promise((resolve, reject) => {
+
+        instructions.forEach(function(instruction, ind) {
+            let vid = instruction.videoSource.mongoId;
+            let sourceVid = uploadedFilesPath + '/' + vid + '.webm';
+            let destVid = stagingAreaPath + '/' + vid + '.mp4';
+            let startTime = instruction.startTime;
+            let duration = (Number(instruction.endTime) - Number(startTime)).toString();
+            // TODO: Need an option for "no filter" that doesn't break the child process
+            // (which expects a filter). If instruction.filter is left "undefined", the proc breaks.
+            // That's why we currently force it to have grayscale if it doesn't already have a filter.
+            let filterCode = makeFilterString(instruction.filters) || "mp=eq2=1:1:0:1:1:1:1";
+            let filtersProc = spawn('ffmpeg', ['-ss', startTime, '-i', sourceVid, '-t', duration, '-filter_complex', filterCode, '-strict', 'experimental', '-preset', 'ultrafast', '-vcodec', 'libx264', destVid, '-y']);
+            filtersProc.on('error',function(err,stdout,stderr){
+                console.error('Errored when attempting to convert this video. Details below.');
+                console.error(err);
+                console.error(stdout);
+                console.error(stderr);
+                reject(err);
+            });
+            filtersProc.on('exit', function(code, signal) {
+                console.log('Filtered and converted', vid);
+                vidsDone++;
+                if (vidsDone == instructions.length) {
+                    console.log('Filters done, now merging.');
+                    resolve(instructions);
+                    //mergeVids(mergedVideo, createdFilePath, instructions);
+                }
+                req.resume();
+            });
+          });
+      });
+    }
+
+    function mergeVids(mergedVideo, createdFilePath, instructions, instructionsId) {
+
+        //create the video record (but don't save it yet) to get the _id of it
+        let createdVideo = new Video({
+          editor: req.user? req.user._id.toString() : 'anon',
+          instructionsId: instructionsId,
+          ext: '.mp4'
+        })
+
+        let createdVidName = createdVideo._id + '.mp4';
+
+        let mergedVideoDest = path.join(createdFilePath,createdVidName); // name of file based on Date.now(). file is already located in the user's created folder so it we would be able to pull it up
+        console.log("merging to destination", mergedVideoDest);
         // add inputs in the same order as they were in the instructions
         instructions.forEach(function (inst) {
             let filename = inst.videoSource.mongoId+'.mp4';
             let input = path.join(stagingAreaPath,filename);
+            console.log("added input", input);
             mergedVideo.addInput(input);
         });
 
@@ -137,7 +182,13 @@ router.post('/makeit', function(req, res) {
             })
             .on('end', function() {
                 console.log('Finished!');
-                deleteStagedFiles().then(() => res.status(201).send(createdVidName));
+                deleteStagedFiles()
+                .then(() => {
+                  return createdVideo.save();
+                })
+                .then(()=> {
+                  res.status(201).send(createdVidName);
+                });
             });
     }
 

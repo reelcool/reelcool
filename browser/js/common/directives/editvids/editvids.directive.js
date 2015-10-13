@@ -3,11 +3,9 @@ app.directive("editvids", function (VideoFactory, InstructionsFactory) {
 		restrict: "E",
 		scope: {},
 		templateUrl: "js/common/directives/editvids/editvids.html",
-		controller: function ($scope, $mdDialog, $rootScope) {
+		controller: function ($scope, IdGenerator, $rootScope, DownloadFactory) {
 
 			$scope.videos = [];
-			$scope.instructions = InstructionsFactory.get();
-			//$scope.instructions = [];
 
 			var instructionsToVideoMap = {};
 			//$scope.instructions= Pedit reel got instructions"reviewFactory.instructions;
@@ -30,6 +28,7 @@ app.directive("editvids", function (VideoFactory, InstructionsFactory) {
 						attachSourceToVideo(updatedVideoElement, instCopy);
 					}, 0);
 				}
+				//the only time that this scope's instructions are updated
 				updateInstructions($scope.videos);
 			});
 
@@ -66,18 +65,17 @@ app.directive("editvids", function (VideoFactory, InstructionsFactory) {
 				// Updates the instructions in the InstructionsFactory
 				// and puts them on the scope.
 				var newInstructions = videosList.map(el => el.instructions);
-				$scope.instructions = InstructionsFactory.update(newInstructions);
+				InstructionsFactory.updateSequence(newInstructions);
 			}
 
-			$scope.showPreviewModal = ($event) => {
-				console.log('showing preview modal, time to update instructions')
-				updateInstructions($scope.videos);
-				console.log('instructions are updated')
-				console.log('from InstructionsFactory',InstructionsFactory.get());
-				console.log('from the $scope',$scope.instructions);
+			$scope.previewVideo = () => {
+				// console.log('instructions are updated')
+				// console.log('from InstructionsFactory',InstructionsFactory.get());
+				// console.log('from the $scope',$scope.instructions);
+				console.log("preview requesting dl for sequence", InstructionsFactory.getSequence());
+				DownloadFactory.requestReelVideo(InstructionsFactory.getSequence());
 				$rootScope.$broadcast('toggleModal', {show: true});
 			};
-
 		}
 
 	};

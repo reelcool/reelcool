@@ -16,6 +16,7 @@ app.controller("SourceVidsCtrl", function($rootScope, $scope, VideoFactory, Inst
             }
         });
     });
+    
 
     fileInput.addEventListener('change', function (e) {
         var filesArr = Array.prototype.slice.call(fileInput.files, 0);

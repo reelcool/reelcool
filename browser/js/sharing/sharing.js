@@ -10,33 +10,14 @@ app.directive('sharing', () => {
     };
 });
 
-app.controller('ShareCtrl', function ($http, $scope, $mdDialog, InstructionsFactory, FilterFactory) {
-  function requestReelVideo (instructions) {
-    return $http.post('/api/videos/makeit', instructions);
-  }
-  function promisifiedDownload (instructions) {
-    requestReelVideo(instructions)
-      .then(function (resp) {
-        if (resp.status===201) {
-          var url = '/api/videos/download/'+resp.data;
-          // this "append" is what actually causes the video file to download to the user's computer
-          $("body").append("<iframe src=" + url + " style='display: none;' ></iframe>");
-        }
-        else {
-          console.error('The server responded with status', resp.status);
-        }
-      });
-  }
-
+app.controller('ShareCtrl', function ($http, $scope, DownloadFactory, InstructionsFactory) {
 	$scope.socialNetworks = ['Download', 'Twitter', 'Facebook', 'Instagram'];
     $scope.isOpen = false;
     $scope.openDialog = function($event, item) {
       console.log('oh hey I was clicked')
-      var instructions = InstructionsFactory.get();
-      FilterFactory.addFiltersToAllInstructions(instructions);
-      console.log(instructions);
+      var sequence = InstructionsFactory.getSequence();
       if (item==='Download') {
-        promisifiedDownload(instructions);
+        DownloadFactory.promisifiedDownload(sequence);
       }
       else {
         // Show the dialog

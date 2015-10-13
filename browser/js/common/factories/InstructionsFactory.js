@@ -1,4 +1,6 @@
 app.factory('InstructionsFactory',function (IdGenerator) {
+
+	var sequence = {};
 	var instructions = [],
 		audio = {
 			id: null, // null to keep original track, otherwise mongoID
@@ -20,7 +22,14 @@ app.factory('InstructionsFactory',function (IdGenerator) {
 				startTime: 0,
 				endTime: endTime,
 			};
-		}, 
+		},
+		updateSequence: (newInstructions) => {
+			sequence.instructions = newInstructions;
+			sequence.id = IdGenerator();
+		},
+		getSequence: () => {
+			return sequence;
+		},
 		update: (newInstructions) => instructions = newInstructions,
 		makeUniqueInstructions: function(instructions){
 			var instCopy = {filters:[]};
